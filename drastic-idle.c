@@ -1,7 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
-#include <X11/keysym.h>
 #include <X11/extensions/scrnsaver.h>
 #include <getopt.h>
 #include <stdio.h>
@@ -16,14 +15,13 @@
 #define TIMER_MARGIN 10
 
 typedef struct {
-	unsigned long phase1_ms, phase2_ms, auto_snooze_ms, manual_snooze_ms;
+	unsigned long phase1_ms, phase2_ms, auto_snooze_ms;
 	unsigned int poll_s;
 } config_t;
 
 #define DEFAULT_PHASE1_MS 10000
 #define DEFAULT_PHASE2_MS 300000
 #define DEFAULT_AUTO_SNOOZE_MS 60000
-#define DEFAULT_MANUAL_SNOOZE_MS 300000
 #define DEFAULT_POLL_S 2
 
 static unsigned long now_ms(void) {
@@ -59,19 +57,28 @@ static void close_active_window(Display *d) {
 
 static void format_timer(char *buf, size_t size, const config_t *c, unsigned long idle,
 		unsigned long snoozed_until, int phase1_done, unsigned long now) {
-	unsigned long rem_s = (snoozed_until > now) ? (snoozed_until - now) / 1000 : 0;
-	if (rem_s) {
-		snprintf(buf, size, "Snoozed %lu:%02lu", rem_s / 60, rem_s % 60);
+	unsigned long rem_ms = (snoozed_until > now) ? (snoozed_until - now) : 0;
+	if (rem_ms) {
+		unsigned long rem_s = rem_ms / 1000;
+		snprintf(buf, size, "Snoozed %lu:%02lu.%lu", rem_s / 60, rem_s % 60, (rem_ms % 1000) / 100);
 		return;
 	}
 	unsigned long idle_s = idle / 1000;
-	unsigned long p1_s = idle >= c->phase1_ms ? 0 : (c->phase1_ms - idle) / 1000;
-	unsigned long p2_m = (idle >= c->phase2_ms ? 0 : (c->phase2_ms - idle) / 1000 + 59) / 60;
-	if (phase1_done || idle >= c->phase1_ms)
-		snprintf(buf, size, "Idle %lu:%02lu P1 %s Off %lum", idle_s / 60, idle_s % 60,
-			phase1_done ? "done" : "0s", p2_m);
-	else
-		snprintf(buf, size, "Idle %lu:%02lu P1 %lus Off %lum", idle_s / 60, idle_s % 60, p1_s, p2_m);
+	unsigned long idle_t = (idle % 1000) / 100;
+	unsigned long p2_ms = idle >= c->phase2_ms ? 0 : c->phase2_ms - idle;
+	unsigned long p2_sec = p2_ms / 1000;
+	unsigned long p2_t = (p2_ms % 1000) / 100;
+	if (phase1_done || idle >= c->phase1_ms) {
+		snprintf(buf, size, "Idle %lu:%02lu.%lu P1 %s Off %lu:%02lu.%lu",
+			idle_s / 60, idle_s % 60, idle_t, phase1_done ? "done" : "0s",
+			p2_sec / 60, p2_sec % 60, p2_t);
+		return;
+	}
+	unsigned long p1_ms = c->phase1_ms - idle;
+	unsigned long p1_s = p1_ms / 1000;
+	unsigned long p1_t = (p1_ms % 1000) / 100;
+	snprintf(buf, size, "Idle %lu:%02lu.%lu P1 %lu.%lus Off %lu:%02lu.%lu",
+		idle_s / 60, idle_s % 60, idle_t, p1_s, p1_t, p2_sec / 60, p2_sec % 60, p2_t);
 }
 
 static void draw_timer(Display *d, Window win, GC gc, const config_t *c, unsigned long idle,
@@ -83,18 +90,20 @@ static void draw_timer(Display *d, Window win, GC gc, const config_t *c, unsigne
 	XFlush(d);
 }
 
-static void process_events(Display *d, const config_t *c, unsigned long *snoozed_until) {
+static void process_events(Display *d) {
 	while (XPending(d)) {
 		XEvent ev;
 		XNextEvent(d, &ev);
-		if (ev.type == KeyPress) *snoozed_until = now_ms() + c->manual_snooze_ms;
 	}
 }
 
 /** Returns 1 if process should exit (poweroff), 0 to continue. */
 static int run_phases(Display *d, const config_t *c, unsigned long idle, unsigned long now,
 		int *phase1_done, unsigned long *snoozed_until) {
-	if (idle < c->phase1_ms) *phase1_done = 0;
+	if (idle < c->phase1_ms) {
+		*phase1_done = 0;
+		*snoozed_until = 0;
+	}
 	if (now < *snoozed_until) return 0;
 	if (idle >= c->phase2_ms) return 1;
 	if (idle >= c->phase1_ms && !*phase1_done) {
@@ -119,7 +128,6 @@ static void usage(const char *name) {
 		"  --phase1 SEC      idle before close window (default 10)\n"
 		"  --phase2 SEC      idle before poweroff (default 300)\n"
 		"  --auto-snooze SEC snooze after phase1 (default 60)\n"
-		"  --manual-snooze SEC snooze on F12 (default 300)\n"
 		"  --poll SEC        poll interval (default 2)\n"
 		"  -h, --help        show this\n",
 		name);
@@ -129,26 +137,23 @@ static int parse_args(int argc, char **argv, config_t *c) {
 	c->phase1_ms = DEFAULT_PHASE1_MS;
 	c->phase2_ms = DEFAULT_PHASE2_MS;
 	c->auto_snooze_ms = DEFAULT_AUTO_SNOOZE_MS;
-	c->manual_snooze_ms = DEFAULT_MANUAL_SNOOZE_MS;
 	c->poll_s = DEFAULT_POLL_S;
 	static struct option opts[] = {
 		{ "phase1",       required_argument, 0, '1' },
 		{ "phase2",       required_argument, 0, '2' },
 		{ "auto-snooze",  required_argument, 0, 'a' },
-		{ "manual-snooze", required_argument, 0, 'm' },
 		{ "poll",         required_argument, 0, 'p' },
 		{ "help",         no_argument,       0, 'h' },
 		{ 0, 0, 0, 0 }
 	};
 	int opt;
-	while ((opt = getopt_long(argc, argv, "1:2:a:m:p:h", opts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "1:2:a:p:h", opts, NULL)) != -1) {
 		unsigned long val;
 		char *end;
 		switch (opt) {
 		case '1': val = strtoul(optarg, &end, 10); if (*end || val == 0) goto bad; c->phase1_ms = val * 1000; break;
 		case '2': val = strtoul(optarg, &end, 10); if (*end || val == 0) goto bad; c->phase2_ms = val * 1000; break;
 		case 'a': val = strtoul(optarg, &end, 10); if (*end) goto bad; c->auto_snooze_ms = val * 1000; break;
-		case 'm': val = strtoul(optarg, &end, 10); if (*end) goto bad; c->manual_snooze_ms = val * 1000; break;
 		case 'p': val = strtoul(optarg, &end, 10); if (*end || val == 0) goto bad; c->poll_s = (unsigned int)val; break;
 		case 'h': usage(argv[0]); exit(0);
 		default: usage(argv[0]); return -1;
@@ -172,9 +177,6 @@ int main(int argc, char **argv) {
 	if (!d) return 1;
 	int screen = DefaultScreen(d);
 	Window root = DefaultRootWindow(d);
-	XSelectInput(d, root, KeyPressMask);
-	KeyCode keycode = XKeysymToKeycode(d, XK_F12);
-	if (keycode) XGrabKey(d, keycode, 0, root, True, GrabModeAsync, GrabModeAsync);
 	int tw_x = DisplayWidth(d, screen) - TIMER_W - TIMER_MARGIN;
 	XSetWindowAttributes attrs = { .override_redirect = True,
 		.background_pixel = WhitePixel(d, screen),
@@ -192,7 +194,7 @@ int main(int argc, char **argv) {
 	int xfd = ConnectionNumber(d);
 	for (;;) {
 		wait_poll(xfd, cfg.poll_s);
-		process_events(d, &cfg, &snoozed_until);
+		process_events(d);
 		unsigned long idle = get_idle_ms(d);
 		unsigned long now = now_ms();
 		if (run_phases(d, &cfg, idle, now, &phase1_done, &snoozed_until)) {
