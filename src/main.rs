@@ -105,12 +105,37 @@ fn format_dur(d: Duration) -> String {
     format!("{min}:{sec:02}.{ms:03}")
 }
 
-fn run_phase1(cmd: &[String]) {
+fn get_active_window_id() -> Option<String> {
+    Command::new("xdotool")
+        .args(["getactivewindow"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn close_window_by_id(window_id: &str) {
+    let _ = Command::new("xdotool")
+        .args(["windowclose", window_id])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+}
+
+fn run_phase1(cmd: Option<&[String]>, window_id: Option<&str>) {
+    if let Some(id) = window_id {
+        close_window_by_id(id);
+    }
+    let Some(cmd) = cmd else { return };
     if cmd.is_empty() {
         return;
     }
-    let _ = Command::new(&cmd[0])
-        .args(&cmd[1..])
+    let line = cmd.join(" ");
+    let _ = Command::new("sh")
+        .args(["-c", &line])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -127,7 +152,10 @@ fn run_phase2(cmd: &[String]) {
 struct State {
     phase1_done: bool,
     snoozed_until: Option<Instant>,
+    phase2_start: Option<Instant>,
     last_input: Instant,
+    /// Last active window ID while user was active (so we close that window on P1, not our terminal).
+    last_active_window_id: Option<String>,
 }
 
 fn run_phases(
@@ -141,19 +169,22 @@ fn run_phases(
             return false;
         }
         state.snoozed_until = None;
+        state.phase2_start = Some(now);
     }
-    if idle >= cfg.phase2 {
-        if let Some(ref c) = cfg.phase2_cmd {
-            run_phase2(c);
+    if let Some(start) = state.phase2_start {
+        let phase2_elapsed = now.saturating_duration_since(start);
+        if phase2_elapsed >= cfg.phase2 {
+            if let Some(ref c) = cfg.phase2_cmd {
+                run_phase2(c);
+            }
+            return true;
         }
-        return true;
     }
     if idle >= cfg.phase1 && !state.phase1_done {
         state.phase1_done = true;
         state.snoozed_until = Some(now + cfg.auto_snooze);
-        if let Some(ref c) = cfg.phase1_cmd {
-            run_phase1(c);
-        }
+        let window_id = state.last_active_window_id.as_deref();
+        run_phase1(cfg.phase1_cmd.as_deref(), window_id);
     }
     false
 }
@@ -185,7 +216,7 @@ fn draw(frame: &mut Frame, cfg: &Config, state: &State, idle: Duration, now: Ins
             Style::default().fg(Color::Cyan),
         ));
         let p2 = Line::from(Span::styled(
-            format!("Phase 2: in {} (frozen during snooze)", format_dur(cfg.phase2.saturating_sub(idle))),
+            format!("Phase 2: starts in {} (after snooze)", format_dur(rem)),
             Style::default().fg(Color::DarkGray),
         ));
         (p1, p2)
@@ -200,12 +231,21 @@ fn draw(frame: &mut Frame, cfg: &Config, state: &State, idle: Duration, now: Ins
         } else {
             Line::from(Span::styled("Phase 1: done", Style::default().fg(Color::Cyan)))
         };
-        let p2_rem = cfg.phase2.saturating_sub(idle);
-        let ratio = cfg.phase2.as_secs_f64().recip() * p2_rem.as_secs_f64();
-        let p2 = Line::from(Span::styled(
-            format!("Phase 2: {} until power off", format_dur(p2_rem)),
-            Style::default().fg(phase_color(ratio)),
-        ));
+        let p2 = match state.phase2_start {
+            Some(start) => {
+                let elapsed = now.saturating_duration_since(start);
+                let p2_rem = cfg.phase2.saturating_sub(elapsed);
+                let ratio = cfg.phase2.as_secs_f64().recip() * p2_rem.as_secs_f64();
+                Line::from(Span::styled(
+                    format!("Phase 2: {} until power off", format_dur(p2_rem)),
+                    Style::default().fg(phase_color(ratio)),
+                ))
+            }
+            None => Line::from(Span::styled(
+                "Phase 2: after Phase 1",
+                Style::default().fg(Color::DarkGray),
+            )),
+        };
         (p1, p2)
     };
     let body = Paragraph::new(vec![
@@ -242,6 +282,10 @@ fn run_tui(
     if use_system_idle && idle < ACTIVITY_THRESHOLD {
         state.phase1_done = false;
         state.snoozed_until = None;
+        state.phase2_start = None;
+        if let Some(id) = get_active_window_id() {
+            state.last_active_window_id = Some(id);
+        }
     }
     if run_phases(idle, now, cfg, state) {
         return Ok(true);
@@ -254,6 +298,7 @@ fn run_tui(
                     state.last_input = Instant::now();
                     state.phase1_done = false;
                     state.snoozed_until = None;
+                    state.phase2_start = None;
                     if k.code == KeyCode::Char('q') || (k.code == KeyCode::Char('c') && k.modifiers.contains(KeyModifiers::CONTROL)) {
                         return Ok(true);
                     }
@@ -263,6 +308,7 @@ fn run_tui(
                 state.last_input = Instant::now();
                 state.phase1_done = false;
                 state.snoozed_until = None;
+                state.phase2_start = None;
             }
             _ => {}
         }
@@ -282,7 +328,9 @@ fn main() {
     let mut state = State {
         phase1_done: false,
         snoozed_until: None,
+        phase2_start: None,
         last_input: Instant::now(),
+        last_active_window_id: get_active_window_id(),
     };
     enable_raw_mode().unwrap();
     crossterm::execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).unwrap();

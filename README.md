@@ -57,12 +57,11 @@ After phase1 runs, the program auto-snoozes for `--auto-snooze` seconds (phase2 
 
 ### Phase 1: close window
 
-Phase 1 often runs a command to close the active (or focused) window. The command runs with your environment (DISPLAY/WAYLAND_DISPLAY). Use a command that works on your session:
+On **X11**, when phase 1 runs the app closes the **window that had focus when you went idle** (using `xdotool getactivewindow` while you’re active, then `xdotool windowclose <id>` on phase 1). So the window that was in use (e.g. browser) is closed, not the terminal running drastic-idle. Requires `xdotool` to be installed.
 
-- **X11**: `xdotool getactivewindow windowclose` or `wmctrl -c :ACTIVE:` (needs `xdotool` / `wmctrl`).
-- **Wayland**: `xdotool` does not work. Use a compositor-specific method or e.g. `ydotool` if your compositor supports it; otherwise use a small script that talks to your compositor’s DBus/API.
+You can still set `--phase1-cmd` to run an extra command after closing that window. Without `--phase1-cmd`, only the window close runs.
 
-If nothing happens, try running the same command in a terminal (without drastic-idle) to confirm it works.
+**Wayland**: `xdotool` does not work. Phase 1 will only run your `--phase1-cmd` if you set one; there is no built-in “close last window” on Wayland.
 
 ### Timer
 
