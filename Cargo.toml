@@ -1,0 +1,9 @@
+[package]
+name = "drastic-idle"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = "0.28"
+crossterm = "0.28"
+user-idle2 = "0.6"

@@ -1,2 +1,2 @@
 drastic-idle
-*.o
+/target/
