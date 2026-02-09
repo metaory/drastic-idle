@@ -1,58 +1,45 @@
 # drastic-idle
 
-TUI that tracks idle time and runs phased actions: after phase1 (optional command), after phase2 (power off). Timeouts and commands are fixed (phase1 10s, phase2 300s, phase2 runs `systemctl poweroff`). Config file or env may be added later.
+TUI that tracks idle time and runs phased actions: after phase1 (optional command + close focused window on X11), after phase2 (power off). Phase1 = 10s idle, phase2 = 5m countdown then `systemctl poweroff`.
 
-- **Phase 1**: idle ≥ 10s → run optional phase1 command (none by default); then phase 2 starts.
-- **Phase 2**: 5m countdown after phase 1 → run `systemctl poweroff` then exit.
+- **Phase 1**: idle ≥ 10s → close the window that had focus (X11 only), run optional phase1 command (none by default); then phase 2 starts.
+- **Phase 2**: 5m countdown → `systemctl poweroff` then exit.
 
-**Idle source**: When available, idle is **system-wide** (X11, or Wayland/GNOME via DBus). Any keyboard or mouse activity in any window resets the timer. If no system idle backend is available, idle is TUI-local (only input in the app resets it). The counter shows milliseconds and updates smoothly (~50 fps).
+## Support
 
-## Dependencies
+| Feature | X11 | Wayland |
+|--------|-----|---------|
+| **System-wide idle** | ✓ (X11 backend) | ✓ on GNOME (Mutter/DBus via user-idle2) |
+| **Phase 1: close focused window** | ✓ (needs `xdotool`) | ✗ |
 
-- **Build**: Rust (e.g. Arch: `rust`).
-- **Runtime**: terminal with alt-screen and mouse support.
+**Why no “close window” on Wayland:** That behavior uses `xdotool` (get active window, then close it). Wayland has no equivalent: the protocol does not let one app query or control other apps’ windows for security. So on Wayland the app still runs (idle + phase2 countdown work), but phase1 does not close any window.
 
-## Build
+If no system idle backend is available, idle is TUI-only (only input in the app resets the timer).
 
-```bash
-make
-```
+## Requirements
 
-Or:
+- **Build:** Rust (e.g. Arch: `rust`).
+- **Run:** Terminal with alt-screen and mouse. Optional: `xdotool` for phase1 “close window” on X11. Poweroff may need polkit or root.
 
-```bash
-cargo build --release
-```
-
-Binary: `target/release/drastic-idle`.
-
-## Install (optional)
+## Build & install
 
 ```bash
-make install
+make          # → target/release/drastic-idle
+make install  # → $(PREFIX)/bin (default /usr/local/bin)
 ```
 
-Installs the binary to `$(PREFIX)/bin` (default `/usr/local/bin`).
+Or `cargo build --release`.
 
-## Run
+## Usage
 
 ```bash
 ./drastic-idle
 ```
 
-Phase 2 starts immediately after phase 1. Poweroff may require polkit or elevated rights.
+- **q** or **Ctrl+c** — quit.
+- Idle is shown with ms; any key/mouse **system-wide** (when system idle is used) resets it.
 
-### Phase 1: close window
-
-On **X11**, when phase 1 runs the app closes the **window that had focus when you went idle** (using `xdotool getactivewindow` while you’re active, then `xdotool windowclose <id>` on phase 1). So the window that was in use (e.g. browser) is closed, not the terminal running drastic-idle. Requires `xdotool` to be installed.
-
-No extra phase1 command runs by default. A config file or env could add one later.
-
-**Wayland**: `xdotool` does not work. Phase 1 only closes the last window on X11; there is no built-in “close last window” on Wayland.
-
-### Timer
-
-The TUI shows idle time with milliseconds, phase1 status (countdown or "done"), and countdown to phase2. Any key or mouse action **anywhere** (when system idle is used) resets the idle count; otherwise only input in the TUI does. Press **q** or **Ctrl+c** to quit.
+Phase 1 on X11: the window that had focus when you went idle is closed (via `xdotool`). No extra phase1 command by default.
 
 ## License
 
