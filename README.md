@@ -1,6 +1,6 @@
 # drastic-idle
 
-TUI that tracks idle time and runs phased actions: after phase1 (optional command + close focused window on X11), after phase2 (power off). Phase1 = 10s idle, phase2 = 5m countdown then `systemctl poweroff`.
+TUI that tracks idle time and runs phased actions: after phase1 (optional command + close focused window on X11), after phase2 (power off). Defaults: phase1 = 10s idle, phase2 = 5m countdown then `systemctl poweroff`. Optional args: `[phase1_secs] [phase2_secs]` override the timer seconds.
 
 - **Phase 1**: idle ≥ 10s → close the window that had focus (X11 only), run optional phase1 command (none by default); then phase 2 starts.
 - **Phase 2**: 5m countdown → `systemctl poweroff` then exit.
@@ -33,8 +33,12 @@ Or `cargo build --release`.
 ## Usage
 
 ```bash
-./drastic-idle
+./drastic-idle [phase1_secs] [phase2_secs]
 ```
+
+- No args: phase1=10s, phase2=300s.
+- One arg: phase1 set, phase2=300s (e.g. `./drastic-idle 30`).
+- Two args: phase1 and phase2 (e.g. `./drastic-idle 30 600`). Invalid/missing args fall back to defaults.
 
 - **q** or **Ctrl+c** — quit.
 - Idle is shown with ms; any key/mouse **system-wide** (when system idle is used) resets it.

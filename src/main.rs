@@ -263,7 +263,12 @@ fn run_tui(
 }
 
 fn main() {
-    let cfg = Config::default();
+    let a: Vec<String> = std::env::args().skip(1).take(2).collect();
+    let cfg = Config {
+        phase1_secs: a.get(0).and_then(|s| s.parse().ok()).unwrap_or(10),
+        phase2_secs: a.get(1).and_then(|s| s.parse().ok()).unwrap_or(300),
+        ..Config::default()
+    };
 
     let use_system_idle = system_idle().is_some();
     let mut state = AppState::new();
