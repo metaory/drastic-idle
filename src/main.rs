@@ -47,14 +47,17 @@ fn format_dur(d: Duration) -> String {
     format!("{min}:{sec:02}.{ms:03}")
 }
 
-fn phase_color(ratio: f64) -> Color {
-    if ratio <= 0.2 {
-        Color::Red
-    } else if ratio <= 0.5 {
-        Color::Yellow
+/// Smooth gradient by remaining time ratio (1 = plenty, 0 = none): green → yellow → red.
+fn phase_color(remaining_ratio: f64) -> Color {
+    let t = remaining_ratio.clamp(0.0, 1.0);
+    let (r, g, b) = if t <= 0.5 {
+        let u = t * 2.0; // 0..1 over first half
+        (255u8, (255.0 * u).round() as u8, 0)
     } else {
-        Color::Green
-    }
+        let u = (t - 0.5) * 2.0; // 0..1 over second half
+        ((255.0 * (1.0 - u)).round() as u8, 255, 0)
+    };
+    Color::Rgb(r, g, b)
 }
 
 const ACTIVITY_THRESHOLD: Duration = Duration::from_secs(2);
@@ -211,10 +214,40 @@ fn draw_ui(frame: &mut Frame, cfg: &Config, state: &AppState, idle: Duration, no
     let footer = Paragraph::new(Line::from("q/ctrl+c quit"));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(1)])
+        .constraints([Constraint::Min(0), Constraint::Ratio(3, 4), Constraint::Length(1)])
         .split(frame.area());
     frame.render_widget(body, chunks[0]);
-    frame.render_widget(footer, chunks[1]);
+    let gauge_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Ratio(1, 2), Constraint::Length(1), Constraint::Ratio(1, 2)])
+        .split(chunks[1]);
+    let p1_ratio = (!state.phase1_done && idle < cfg.phase1())
+        .then(|| idle.as_secs_f64() / cfg.phase1().as_secs_f64())
+        .unwrap_or(0.0);
+    let p1_time_left_ratio = 1.0 - p1_ratio;
+    let p1_color = phase_color(p1_time_left_ratio);
+    let gauge1 = if !state.phase1_done && idle < cfg.phase1() {
+        Gauge::default()
+            .gauge_style(Style::default().fg(p1_color))
+            .ratio(p1_ratio)
+            .use_unicode(true)
+    } else {
+        Gauge::default().ratio(0.0)
+    };
+    frame.render_widget(gauge1, gauge_chunks[0]);
+    frame.render_widget(Paragraph::new(""), gauge_chunks[1]);
+    let (p2_ratio, p2_color) = state.phase2_start.map(|start| {
+        let elapsed = now.saturating_duration_since(start);
+        let rem = cfg.phase2().saturating_sub(elapsed);
+        let p2_time_left_ratio = rem.as_secs_f64() / cfg.phase2().as_secs_f64();
+        (elapsed.as_secs_f64() / cfg.phase2().as_secs_f64(), phase_color(p2_time_left_ratio))
+    }).unwrap_or((0.0, Color::DarkGray));
+    let gauge2 = Gauge::default()
+        .gauge_style(Style::default().fg(p2_color))
+        .ratio(p2_ratio)
+        .use_unicode(true);
+    frame.render_widget(gauge2, gauge_chunks[2]);
+    frame.render_widget(footer, chunks[2]);
 }
 
 // --- Main loop ---
