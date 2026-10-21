@@ -15,6 +15,9 @@ TUI to tracks idle time and runs phased actions: after phase1 (optional command 
 
 ## Usage
 
+- [x86_64-unknown-linux-gnu](https://github.com/metaory/drastic-idle/releases/latest/download/drastic-idle-x86_64-unknown-linux-gnu.tar.gz)
+- [aarch64-unknown-linux-gnu](https://github.com/metaory/drastic-idle/releases/latest/download/drastic-idle-aarch64-unknown-linux-gnu.tar.gz)
+
 ```bash
 ./drastic-idle [-h|--help] [phase1_secs] [phase2_secs]
 ```
@@ -53,15 +56,6 @@ make install  # → $(PREFIX)/bin (default /usr/local/bin)
 ```
 
 Or `cargo build --release`.
-
-## Releases
-
-Every push publishes a release tagged `sha-<commit>`. Latest:
-
-- [x86_64-unknown-linux-gnu](https://github.com/metaory/drastic-idle/releases/latest/download/drastic-idle-x86_64-unknown-linux-gnu.tar.gz)
-- [aarch64-unknown-linux-gnu](https://github.com/metaory/drastic-idle/releases/latest/download/drastic-idle-aarch64-unknown-linux-gnu.tar.gz)
-
-[github.com/metaory/drastic-idle/releases/latest](https://github.com/metaory/drastic-idle/releases/latest)
 
 ## License
 

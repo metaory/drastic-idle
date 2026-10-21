@@ -1,6 +1,12 @@
 name: release
 
-on: push
+on:
+  push:
+    paths:
+      - src/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/release.yml
 
 permissions:
   contents: read
