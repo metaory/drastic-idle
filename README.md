@@ -56,7 +56,7 @@ Or `cargo build --release`.
 
 ## Releases
 
-Every push publishes a release named after the commit. Latest:
+Every push publishes a release tagged `sha-<commit>`. Latest:
 
 - [x86_64-unknown-linux-gnu](https://github.com/metaory/drastic-idle/releases/latest/download/drastic-idle-x86_64-unknown-linux-gnu.tar.gz)
 - [aarch64-unknown-linux-gnu](https://github.com/metaory/drastic-idle/releases/latest/download/drastic-idle-aarch64-unknown-linux-gnu.tar.gz)

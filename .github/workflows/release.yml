@@ -36,6 +36,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    env:
+      TAG: sha-${{ github.sha }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
@@ -44,11 +46,11 @@ jobs:
           merge-multiple: true
       - run: cd dist && sha256sum *.tar.gz > SHA256SUMS
       - run: |
-          git show-ref --verify --quiet "refs/tags/$GITHUB_SHA" || git tag "$GITHUB_SHA"
-          git push origin "refs/tags/$GITHUB_SHA"
+          git show-ref --verify --quiet "refs/tags/$TAG" || git tag "$TAG"
+          git push origin "refs/tags/$TAG"
       - uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.sha }}
+          tag_name: ${{ env.TAG }}
           target_commitish: ${{ github.sha }}
           make_latest: "true"
           fail_on_unmatched_files: true
