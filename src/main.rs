@@ -47,6 +47,10 @@ fn format_dur(d: Duration) -> String {
     format!("{min}:{sec:02}.{ms:03}")
 }
 
+fn clock(rem: Duration, total: Duration) -> String {
+    format!("{} / {}", format_dur(rem), format_dur(total))
+}
+
 /// Smooth gradient by remaining time ratio (1 = plenty, 0 = none): green → yellow → red.
 fn phase_color(remaining_ratio: f64) -> Color {
     let t = remaining_ratio.clamp(0.0, 1.0);
@@ -176,11 +180,14 @@ fn render(cfg: &Config, state: &AppState, idle: Duration, now: Instant) -> Vec<L
         let left = cfg.phase1().saturating_sub(idle);
         let r = left.as_secs_f64() / cfg.phase1().as_secs_f64();
         Line::from(Span::styled(
-            format!("Phase 1: {} until close window", format_dur(left)),
+            format!("Phase 1: {} until close window", clock(left, cfg.phase1())),
             Style::default().fg(phase_color(r)),
         ))
     } else {
-        Line::from(Span::styled("Phase 1: done", Style::default().fg(Color::Cyan)))
+        Line::from(Span::styled(
+            format!("Phase 1: {} done", clock(Duration::ZERO, cfg.phase1())),
+            Style::default().fg(Color::Cyan),
+        ))
     };
     let p2 = match state.phase2_start {
         Some(start) => {
@@ -188,12 +195,12 @@ fn render(cfg: &Config, state: &AppState, idle: Duration, now: Instant) -> Vec<L
             let rem = cfg.phase2().saturating_sub(elapsed);
             let r = rem.as_secs_f64() / cfg.phase2().as_secs_f64();
             Line::from(Span::styled(
-                format!("Phase 2: {} until power off", format_dur(rem)),
+                format!("Phase 2: {} until power off", clock(rem, cfg.phase2())),
                 Style::default().fg(phase_color(r)),
             ))
         }
         None => Line::from(Span::styled(
-            "Phase 2: after Phase 1",
+            format!("Phase 2: {} after Phase 1", clock(Duration::ZERO, cfg.phase2())),
             Style::default().fg(Color::DarkGray),
         )),
     };
@@ -221,30 +228,40 @@ fn draw_ui(frame: &mut Frame, cfg: &Config, state: &AppState, idle: Duration, no
         .direction(Direction::Vertical)
         .constraints([Constraint::Ratio(1, 2), Constraint::Length(1), Constraint::Ratio(1, 2)])
         .split(chunks[1]);
+    let p1_left = (!state.phase1_done && idle < cfg.phase1())
+        .then(|| cfg.phase1().saturating_sub(idle))
+        .unwrap_or(Duration::ZERO);
     let p1_ratio = (!state.phase1_done && idle < cfg.phase1())
         .then(|| idle.as_secs_f64() / cfg.phase1().as_secs_f64())
         .unwrap_or(0.0);
     let p1_time_left_ratio = 1.0 - p1_ratio;
     let p1_color = phase_color(p1_time_left_ratio);
+    let p1_clock = clock(p1_left, cfg.phase1());
     let gauge1 = if !state.phase1_done && idle < cfg.phase1() {
         Gauge::default()
             .gauge_style(Style::default().fg(p1_color))
             .ratio(p1_ratio)
+            .label(p1_clock)
             .use_unicode(true)
     } else {
-        Gauge::default().ratio(0.0)
+        Gauge::default().ratio(0.0).label(p1_clock)
     };
     frame.render_widget(gauge1, gauge_chunks[0]);
     frame.render_widget(Paragraph::new(""), gauge_chunks[1]);
-    let (p2_ratio, p2_color) = state.phase2_start.map(|start| {
+    let (p2_ratio, p2_color, p2_clock) = state.phase2_start.map(|start| {
         let elapsed = now.saturating_duration_since(start);
         let rem = cfg.phase2().saturating_sub(elapsed);
         let p2_time_left_ratio = rem.as_secs_f64() / cfg.phase2().as_secs_f64();
-        (elapsed.as_secs_f64() / cfg.phase2().as_secs_f64(), phase_color(p2_time_left_ratio))
-    }).unwrap_or((0.0, Color::DarkGray));
+        (
+            elapsed.as_secs_f64() / cfg.phase2().as_secs_f64(),
+            phase_color(p2_time_left_ratio),
+            clock(rem, cfg.phase2()),
+        )
+    }).unwrap_or((0.0, Color::DarkGray, clock(Duration::ZERO, cfg.phase2())));
     let gauge2 = Gauge::default()
         .gauge_style(Style::default().fg(p2_color))
         .ratio(p2_ratio)
+        .label(p2_clock)
         .use_unicode(true);
     frame.render_widget(gauge2, gauge_chunks[2]);
     frame.render_widget(footer, chunks[2]);
@@ -295,12 +312,38 @@ fn run_tui(
     Ok(false)
 }
 
+fn help() {
+    let d = Config::default();
+    let p1 = d.phase1_cmd.as_ref().map(|c| c.join(" ")).unwrap_or_else(|| "no command".into());
+    let p2 = d.phase2_cmd.as_ref().map(|c| c.join(" ")).unwrap_or_else(|| "none".into());
+    println!(
+        "\
+usage: drastic-idle [-h|--help] [phase1_secs] [phase2_secs]
+
+  phase1_secs   idle before phase 1 (close focused window)   default {p1s}
+  phase2_secs   countdown before phase 2                     default {p2s}
+
+defaults
+  phase1  close focused window (X11), {p1}
+  phase2  {p2}
+
+  q, ctrl+c   quit",
+        p1s = d.phase1_secs,
+        p2s = d.phase2_secs,
+    );
+}
+
 fn main() {
-    let a: Vec<String> = std::env::args().skip(1).take(2).collect();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        help();
+        return;
+    }
+    let d = Config::default();
     let cfg = Config {
-        phase1_secs: a.get(0).and_then(|s| s.parse().ok()).unwrap_or(10),
-        phase2_secs: a.get(1).and_then(|s| s.parse().ok()).unwrap_or(300),
-        ..Config::default()
+        phase1_secs: args.first().and_then(|s| s.parse().ok()).unwrap_or(d.phase1_secs),
+        phase2_secs: args.get(1).and_then(|s| s.parse().ok()).unwrap_or(d.phase2_secs),
+        ..d
     };
 
     let use_system_idle = system_idle().is_some();

@@ -1,16 +1,40 @@
-# drastic-idle
+<div align="center">
+    <h1>drastic-idle</h1>
+    <img src=".github/assets/social.png" width="80%" />
+</div>
 
-TUI that tracks idle time and runs phased actions: after phase1 (optional command + close focused window on X11), after phase2 (power off). Defaults: phase1 = 10s idle, phase2 = 5m countdown then `systemctl poweroff`. Optional args: `[phase1_secs] [phase2_secs]` override the timer seconds.
+TUI to tracks idle time and runs phased actions: after phase1 (optional command + close focused window on X11), after phase2 (power off). Defaults: phase1 = 10s idle, phase2 = 5m countdown then `systemctl poweroff`. Optional args: `[phase1_secs] [phase2_secs]` override the timer seconds.
 
 - **Phase 1**: idle ≥ 10s → close the window that had focus (X11 only), run optional phase1 command (none by default); then phase 2 starts.
 - **Phase 2**: 5m countdown → `systemctl poweroff` then exit.
 
+<div align="center">
+    <h1>drastic-idle</h1>
+    <img src=".github/assets/screenshot.png" width="80%" />
+</div>
+
+## Usage
+
+```bash
+./drastic-idle [-h|--help] [phase1_secs] [phase2_secs]
+```
+
+- `-h`, `--help`: print usage and defaults, then exit.
+- No args: phase1=10s, phase2=300s.
+- One arg: phase1 set, phase2=300s (e.g. `./drastic-idle 30`).
+- Two args: phase1 and phase2 (e.g. `./drastic-idle 30 600`). Invalid/missing args fall back to defaults.
+
+- **q** or **Ctrl+c** — quit.
+- Idle is shown with ms; any key/mouse **system-wide** (when system idle is used) resets it.
+
+Phase 1 on X11: the window that had focus when you went idle is closed (via `xdotool`). No extra phase1 command by default.
+
 ## Support
 
-| Feature | X11 | Wayland |
-|--------|-----|---------|
-| **System-wide idle** | ✓ (X11 backend) | ✓ on GNOME (Mutter/DBus via user-idle2) |
-| **Phase 1: close focused window** | ✓ (needs `xdotool`) | ✗ |
+| Feature                           | X11                 | Wayland                                 |
+| --------------------------------- | ------------------- | --------------------------------------- |
+| **System-wide idle**              | ✓ (X11 backend)     | ✓ on GNOME (Mutter/DBus via user-idle2) |
+| **Phase 1: close focused window** | ✓ (needs `xdotool`) | ✗                                       |
 
 **Why no “close window” on Wayland:** That behavior uses `xdotool` (get active window, then close it). Wayland has no equivalent: the protocol does not let one app query or control other apps’ windows for security. So on Wayland the app still runs (idle + phase2 countdown work), but phase1 does not close any window.
 
@@ -30,20 +54,14 @@ make install  # → $(PREFIX)/bin (default /usr/local/bin)
 
 Or `cargo build --release`.
 
-## Usage
+## Releases
 
-```bash
-./drastic-idle [phase1_secs] [phase2_secs]
-```
+Every push publishes a release named after the commit. Latest:
 
-- No args: phase1=10s, phase2=300s.
-- One arg: phase1 set, phase2=300s (e.g. `./drastic-idle 30`).
-- Two args: phase1 and phase2 (e.g. `./drastic-idle 30 600`). Invalid/missing args fall back to defaults.
+- [x86_64-unknown-linux-gnu](https://github.com/metaory/drastic-idle/releases/latest/download/drastic-idle-x86_64-unknown-linux-gnu.tar.gz)
+- [aarch64-unknown-linux-gnu](https://github.com/metaory/drastic-idle/releases/latest/download/drastic-idle-aarch64-unknown-linux-gnu.tar.gz)
 
-- **q** or **Ctrl+c** — quit.
-- Idle is shown with ms; any key/mouse **system-wide** (when system idle is used) resets it.
-
-Phase 1 on X11: the window that had focus when you went idle is closed (via `xdotool`). No extra phase1 command by default.
+[github.com/metaory/drastic-idle/releases/latest](https://github.com/metaory/drastic-idle/releases/latest)
 
 ## License
 

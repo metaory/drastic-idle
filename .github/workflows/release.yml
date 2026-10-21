@@ -1,0 +1,58 @@
+name: release
+
+on: push
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: sudo apt-get update && sudo apt-get install -y pkg-config libdbus-1-dev libx11-dev libxss-dev
+      - run: cargo build --locked --release --target ${{ matrix.target }}
+      - run: strip target/${{ matrix.target }}/release/drastic-idle
+      - run: tar -C target/${{ matrix.target }}/release -czf drastic-idle-${{ matrix.target }}.tar.gz drastic-idle
+      - uses: actions/upload-artifact@v7
+        with:
+          name: drastic-idle-${{ matrix.target }}
+          path: drastic-idle-${{ matrix.target }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - run: cd dist && sha256sum *.tar.gz > SHA256SUMS
+      - run: |
+          git show-ref --verify --quiet "refs/tags/$GITHUB_SHA" || git tag "$GITHUB_SHA"
+          git push origin "refs/tags/$GITHUB_SHA"
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.sha }}
+          target_commitish: ${{ github.sha }}
+          make_latest: "true"
+          fail_on_unmatched_files: true
+          files: |
+            dist/drastic-idle-x86_64-unknown-linux-gnu.tar.gz
+            dist/drastic-idle-aarch64-unknown-linux-gnu.tar.gz
+            dist/SHA256SUMS
